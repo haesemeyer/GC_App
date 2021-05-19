@@ -1,0 +1,12 @@
+C:\Users\GradientChamber\source\repos\GC_App\obj\Debug\GC_App.csprojAssemblyReference.cache
+C:\Users\GradientChamber\source\repos\GC_App\obj\Debug\GC_App.csproj.CoreCompileInputs.cache
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\GC_App.exe.config
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\GC_App.exe
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\GC_App.pdb
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\NationalInstruments.Common.dll
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\NationalInstruments.DAQmx.dll
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\NationalInstruments.Common.xml
+C:\Users\GradientChamber\source\repos\GC_App\bin\Debug\NationalInstruments.DAQmx.xml
+C:\Users\GradientChamber\source\repos\GC_App\obj\Debug\GC_App.csproj.CopyComplete
+C:\Users\GradientChamber\source\repos\GC_App\obj\Debug\GC_App.exe
+C:\Users\GradientChamber\source\repos\GC_App\obj\Debug\GC_App.pdb
