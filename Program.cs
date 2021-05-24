@@ -2,6 +2,7 @@
 using System.IO;
 using System.Drawing;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Text.RegularExpressions;
 
 using MHApi.Threading;
@@ -26,9 +27,14 @@ namespace GC_App
         const int CONSOLE_WIDTH = 60;
         const int CONSOLE_HEIGHT = 27;
         const int INPUT_TEMP_ROW = 22;
-        const int TITLE_ROW = 2;
         const int TEMP_DISP_ROW = 3;
         static readonly int[] TEMP_COLS = { 11, 27, 45 };
+        //general variables
+        static object _printLock = new object();  //lock object used to set cursor
+        static string _save_file;  //location to save file
+        static int _peltier_config;
+        static double[] _temps = new double[NUM_PELTIERS];
+        static readonly string[] _schematic = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\temp_display.txt");
 
         //set up daq board
         static PCIe6323 _daq = new PCIe6323("dev1", PCIe6323.AIReadTriggerType.None);
@@ -50,43 +56,47 @@ namespace GC_App
             new Peltier("dev1", "ctr2", "PFI14", 100, "Port1/line1"),
         };
         //create temperature controllers
-        static bool _controlRunning = false;
         static TemperatureController[] _tempControl =
         {
             new TemperatureController(_thermistors[0], _peltier[0], 0, 0, VEL, "TController1"),
             new TemperatureController(_thermistors[2], _peltier[1], 0, 0, VEL, "TController2"),
             new TemperatureController(_thermistors[4], _peltier[2], 0, 0, VEL, "TController3")
         };
+        static bool _controlRunning = false;
 
         //create reset events
-        static AutoResetEvent _iostart = new AutoResetEvent(false);
         static AutoResetEvent _tempGet = new AutoResetEvent(false);
         static AutoResetEvent _tempGot = new AutoResetEvent(false);
         static ManualResetEvent _exitEvent = new ManualResetEvent(false);
-        //static ManualResetEvent _setupEvent = new ManualResetEvent(false);
+
         //create threads
         static WorkerT<Object> _IOworker = new WorkerT<Object>(IOloop, null, false);
-        //create variables
-        static string _save_file;
-        static int _peltier_config;
-        static double[] _temps = new double[NUM_PELTIERS];
-        static readonly string[] _schematic = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\temp_display.txt");
-        //lock object used to set cursor
-        static object _printLock = new object();
+        static WorkerT<int> _TWworker = new WorkerT<int>(TWloop, 100, false);
+
+        //record current time
+        static DateTime _time = DateTime.Now;
 
         static void Main(string[] args)
         {
             // Prepare console
             Console.Clear();
             Console.SetWindowSize(CONSOLE_WIDTH, CONSOLE_HEIGHT);
-			Console.SetBufferSize(CONSOLE_WIDTH, CONSOLE_HEIGHT);
+            Console.SetBufferSize(CONSOLE_WIDTH, CONSOLE_HEIGHT);
 
-            // Obtain session information
-            string folderName = @"C:\Users\GradientChamber\Desktop\GCtemps\";
-            string timestamp = DateTime.Now.ToString("yyMMdd_HH_mm");
+            // Obtain session information for save file
             string[] info = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\session-info.txt");
-            ConsoleKeyInfo cki0; bool infopass = false; 
-            var regex = new Regex(".*(Desktop.*)$");
+            string folderName = @"C:\Users\GradientChamber\Desktop\GCtemps\";
+            var regex = new Regex(".*(Desktop.*)$");  //string matching to print truncated version of file path
+           
+            // File variables
+            string experimenter = null; 
+            string session_id = null;
+            string timestamp = _time.ToString("yyMMdd_HH_mm");
+
+            // Loop variables
+            ConsoleKeyInfo cki1; 
+            bool infopass = false;
+            // User input loop for file path information
             lock (_printLock)
             {
                 while (!infopass)
@@ -99,11 +109,11 @@ namespace GC_App
                     //user name input
                     ClearLine(21); Console.SetCursorPosition(0, 21);
                     Console.Write($"\t\t{"Experimenter".Pastel(Color.MediumVioletRed)}: ");
-                    string experimenter = Console.ReadLine();
+                    experimenter = Console.ReadLine();
                     //session id input
-                    ClearLine(22);  Console.SetCursorPosition(0, 22);
+                    ClearLine(22); Console.SetCursorPosition(0, 22);
                     Console.Write($"\t\t{"Session ID".Pastel(Color.MediumVioletRed)}: ");
-                    string session_id = Console.ReadLine();
+                    session_id = Console.ReadLine();
 
                     //create experimeter directory if it does not exist
                     string pathString = Path.Combine(folderName, Regex.Replace(experimenter.ToLower(), @"\s+", ""));
@@ -112,42 +122,51 @@ namespace GC_App
                         try
                         {
                             Directory.CreateDirectory(pathString);
-                            _save_file = pathString + "\\" + timestamp + "_" + session_id + ".txt";
+                            _save_file = Path.Combine(pathString,  timestamp + "_" + session_id + ".txt");
                             infopass = true;
                         }
                         catch
                         {
+                            ClearLine(23); ClearLine(24); Console.SetCursorPosition(0, 23);
+                            Console.WriteLine($"\t{"Unable to create experimenter directory".Pastel(Color.DeepSkyBlue)}\n");
                             infopass = false;
                         }
                     }
                     else
-					{
-                        _save_file = pathString + "\\" + timestamp + "_" + session_id + ".txt";
+                    {
+                        _save_file = Path.Combine(pathString,  timestamp + "_" + session_id + ".txt");
                         infopass = true;
                     }
 
                     //redo if the directory could not be made, or if the user wishes to
-                    if (infopass)
+                    if (infopass && IsValidPath(_save_file))
                     {
                         ClearLine(23); ClearLine(24); Console.SetCursorPosition(0, 23);
-                        Console.WriteLine($"\t\t{"Save file location".Pastel(Color.MediumVioletRed)}:\n\t" + 
+                        Console.WriteLine($"\t\t{"Save file location".Pastel(Color.MediumVioletRed)}:\n\t" +
                                             regex.Match(_save_file).Groups[1].Value);
                         Console.Write("\n\tPress R to redo, any other key continues");
-                        cki0 = Console.ReadKey(true);
-                        if (cki0.Key == ConsoleKey.R || cki0.Key == ConsoleKey.Escape)
-						{
-                            infopass = false;
+                        cki1 = Console.ReadKey(true);
+                        if (cki1.Key == ConsoleKey.R || cki1.Key == ConsoleKey.Escape)
+                        {
                             ClearLine(23); ClearLine(24); ClearLine(26);
-						}
+                            infopass = false;
+                        }
                     }
                     else
-					{
+                    {
                         ClearLine(23); ClearLine(24); Console.SetCursorPosition(0, 23);
-                        Console.WriteLine($"\t{"Unable to create experimenter directory".Pastel(Color.IndianRed)}\n");
+                        Console.WriteLine($"\t{"File path invalid".Pastel(Color.DeepSkyBlue)}\n");
+                        infopass = false;
                     }
                 }
                 Console.Clear(); Console.SetCursorPosition(0, 0);
             }
+
+            // Begin new file and write to it            
+            _ = WriteAsync(String.Format("Experimenter: {0}", experimenter));
+            _ = WriteAsync(String.Format("Session ID: {0}", session_id));
+            _ = WriteAsync(String.Format("Start time: {0}", _time.ToString("MM/dd/yyyy hh:mm tt")));
+            _ = WriteAsync("\nTime(s)\tAI0\tAI1\tAI2\tAI3\tAI4\tAI5");
 
             // Obtain peltier configuration
             string[] config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
@@ -164,10 +183,12 @@ namespace GC_App
 			}
 
             // Initialize system
-            _temps = GetTemps();
-            _IOworker.Start();
-            _iostart.WaitOne(); // wait for '_IOthread' to begin
-            StartTemperatureControl();
+            _temps = GetTemps();                // (1) get initial temperatures from user
+            _daq.AI.Start(2500, 100);           // (2) Begin AI
+            _daq.AI.ReadThreadReady.WaitOne();  // (3) Wait for AI system
+            _IOworker.Start();          // (4) begin (DAQ) printing values from thermistors
+            _TWworker.Start();          // (5) begin writing values from thermistors
+            StartTemperatureControl();  // (6) begin control loop
 
             // User input and console update loop
             ConsoleKeyInfo cki;
@@ -178,6 +199,7 @@ namespace GC_App
                 switch (cki.Key)
                 {
                     case ConsoleKey.E:
+                        _TWworker.Stop();
                         _IOworker.Stop();
                         _exitEvent.Set();
                         break;
@@ -196,6 +218,7 @@ namespace GC_App
             StopTemperatureControl(); //handles temperature controllers and peltiers
             _daq.Dispose();
             _IOworker.Dispose();
+            _TWworker.Dispose();
 
             // Keep the console open in debug mode.
             lock (_printLock)
@@ -206,14 +229,9 @@ namespace GC_App
             }
         }
 
-        #region DAQ loop
+        #region Console loop
         static void IOloop(AutoResetEvent stop, Object data)
         {
-            // Start up AI
-            _daq.AI.Start(2500, 100);
-            Thread.Sleep(250);
-            _iostart.Set();
-
             while (!stop.WaitOne(100))
             {
                 lock (_printLock)
@@ -233,12 +251,29 @@ namespace GC_App
                     }
                 }
 
-                // Loop instructions
-                if (stop.WaitOne(100)) break;
+                // Halt printing if user updates temperatures
                 if (_tempGet.WaitOne(100)) _tempGot.WaitOne();
             }
         }
-        #endregion DAQ loop
+		#endregion Console loop
+
+		#region Text writer
+        static void TWloop(AutoResetEvent stop, int period)
+		{
+            Thread.Sleep(period); // wait a period for DAQ
+            while (!stop.WaitOne(period))
+            {
+                // Print temperatures to file
+                _ = WriteAsync(String.Format("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}",
+                                TimeSpan.FromTicks(DateTime.Now.Ticks - _time.Ticks).TotalSeconds.ToString("0.000"),
+                                _thermistors[0].Temperature.ToString("0.000"), _thermistors[1].Temperature.ToString("0.000"),
+                                _thermistors[2].Temperature.ToString("0.000"), _thermistors[3].Temperature.ToString("0.000"),
+                                _thermistors[4].Temperature.ToString("0.000"), _thermistors[5].Temperature.ToString("0.000")));
+            }
+            
+        }
+
+        #endregion Text writer
 
         #region Temperature controlling
         /// <summary>
@@ -381,5 +416,40 @@ namespace GC_App
             Console.Write(new String(' ', Console.BufferWidth));
         }
         #endregion Clear console line
-    }
+
+        #region Write to file
+        public static async Task WriteAsync(string Line)
+        {
+            using (StreamWriter file = new StreamWriter(_save_file, append: true))
+                await file.WriteLineAsync(Line);
+        }
+        #endregion Write to file
+
+        #region Is file path valid
+        static bool IsValidPath(string path, bool allowRelativePaths = false)
+        {
+            bool isValid;
+            try
+            {
+                string fullPath = Path.GetFullPath(path);
+
+                if (allowRelativePaths)
+                {
+                    isValid = Path.IsPathRooted(path);
+                }
+                else
+                {
+                    string root = Path.GetPathRoot(path);
+                    isValid = String.IsNullOrEmpty(root.Trim(new char[] { '\\', '/' })) == false;
+                }
+            }
+            catch
+            {
+                isValid = false;
+            }
+
+            return isValid;
+        }
+		#endregion Is file path valid
+	}
 }
