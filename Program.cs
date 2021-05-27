@@ -25,10 +25,10 @@ namespace GC_App
         const double VEL = 2.0;
         //console display
         const int CONSOLE_WIDTH = 60;
-        const int CONSOLE_HEIGHT = 27;
+        const int CONSOLE_HEIGHT = 28;
         const int INPUT_TEMP_ROW = 22;
         const int TEMP_DISP_ROW = 3;
-        static readonly int[] TEMP_COLS = { 11, 27, 45 };
+        static readonly int[] TEMP_COLS = { 11, 28, 45 };
         //general variables
         static object _printLock = new object();  //lock object used to set cursor
         static string _save_file;  //location to save file
@@ -55,7 +55,7 @@ namespace GC_App
             new Peltier("dev1", "ctr1", "PFI13", 100, "Port1/line0"),
             new Peltier("dev1", "ctr2", "PFI14", 100, "Port1/line1"),
         };
-        //create temperature controllers
+        //create temperature controllers and parameters
         static TemperatureController[] _tempControl =
         {
             new TemperatureController(_thermistors[0], _peltier[0], 0, 0, VEL, "TController1"),
@@ -63,6 +63,7 @@ namespace GC_App
             new TemperatureController(_thermistors[4], _peltier[2], 0, 0, VEL, "TController3")
         };
         static bool _controlRunning = false;
+        static double _KP; static double _KI; static double _KD;
 
         //create reset events
         static AutoResetEvent _tempGet = new AutoResetEvent(false);
@@ -71,10 +72,10 @@ namespace GC_App
 
         //create threads
         static WorkerT<Object> _IOworker = new WorkerT<Object>(IOloop, null, false);
-        static WorkerT<int> _TWworker = new WorkerT<int>(TWloop, 100, false);
+        static WorkerT<int> _TWworker;
 
         //record current time
-        static DateTime _time = DateTime.Now;
+        static readonly DateTime _time = DateTime.Now;
 
         static void Main(string[] args)
         {
@@ -168,7 +169,8 @@ namespace GC_App
             _ = WriteAsync(String.Format("Start time: {0}", _time.ToString("MM/dd/yyyy hh:mm tt")));
             _ = WriteAsync("\nTime(s)\tAI0\tAI1\tAI2\tAI3\tAI4\tAI5");
 
-            // Obtain peltier configuration
+            // Obtain peltier configuration and initialize recording thread,
+            // recording thermal data at different rate if calibrating
             string[] config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
 			lock (_printLock)
 			{
@@ -179,9 +181,39 @@ namespace GC_App
                     Console.Write($"\t\t{"Enter peltier configuration".Pastel(Color.MediumVioletRed)}: ");
                 } while (!int.TryParse(Console.ReadLine(), out _peltier_config) || 
                          Math.Abs(_peltier_config) > 4 || _peltier_config == 0);
+
+                // If calibrating, obtain new PID values from user
+                if (_peltier_config == 4)
+                {
+                    do
+                    {
+                        ClearLine(25); Console.SetCursorPosition(0, 25);
+                        Console.Write($"\t\t{"Proprotional value, P: ".Pastel(Color.SeaGreen)}: ");
+                    } while (!double.TryParse(Console.ReadLine(), out _KP) || _KP < 0);
+
+                    do
+                    {
+                        ClearLine(26); Console.SetCursorPosition(0, 26);
+                        Console.Write($"\t\t{"Integral value, I: ".Pastel(Color.SeaGreen)}: ");
+                    } while (!double.TryParse(Console.ReadLine(), out _KI) || _KI < 0);
+
+                    do
+                    {
+                        ClearLine(27); Console.SetCursorPosition(0, 27);
+                        Console.Write($"\t\t{"Derivative value, D: ".Pastel(Color.SeaGreen)}: ");
+                    } while (!double.TryParse(Console.ReadLine(), out _KD) || _KD < 0);
+                    
+                    _TWworker = new WorkerT<int>(TWloop, 100, false); //set record rate
+                }
+                else // Otherwise load last saved by user
+                {
+
+                    _TWworker = new WorkerT<int>(TWloop, 1000, false); //set record rate
+                }
+
                 Console.Clear(); Console.SetCursorPosition(0, 0);
 			}
-
+            
             // Initialize system
             _temps = GetTemps();                // (1) get initial temperatures from user
             _daq.AI.Start(2500, 100);           // (2) Begin AI
@@ -362,7 +394,7 @@ namespace GC_App
                         temps[0] = ReadTemp(TEMP_COLS[0], INPUT_TEMP_ROW);
                         temps[2] = ReadTemp(TEMP_COLS[2], INPUT_TEMP_ROW);
                         temps[1] = (temps[2] + temps[0]) / 2;
-                        PrintTemp(TEMP_COLS[1], INPUT_TEMP_ROW, "*" + temps[1].ToString("0.000") + "*");
+                        PrintTemp(TEMP_COLS[1], INPUT_TEMP_ROW, "*" + temps[1].ToString("0.00") + "*");
                         break;
                     default:
                         for (int i = 0; i < 3; i++)
@@ -404,7 +436,12 @@ namespace GC_App
             foreach (string line in lines)
             {
                 // Use a tab to indent each line of the file.
-                Console.WriteLine("\t" + line);
+                if (line == "| |  :               :                 :  | |")
+                    Console.WriteLine($"\t| |{"  :               :                 :  ".PastelBg(Color.DodgerBlue)}| | ");
+                //else if (line == "| ---:---------------:-----------------:--- |")
+                //    Console.WriteLine($"\t| -{"--:---------------:-----------------:--".PastelBg(Color.DodgerBlue)}- | ");
+                else
+                    Console.WriteLine("\t" + line);
             }
         }
         #endregion Print file
