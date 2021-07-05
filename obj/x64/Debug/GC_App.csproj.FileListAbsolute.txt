@@ -5,10 +5,10 @@ C:\Users\GradientChamber\source\repos\GC_App\bin\x64\Debug\NationalInstruments.C
 C:\Users\GradientChamber\source\repos\GC_App\bin\x64\Debug\NationalInstruments.DAQmx.dll
 C:\Users\GradientChamber\source\repos\GC_App\bin\x64\Debug\NationalInstruments.Common.xml
 C:\Users\GradientChamber\source\repos\GC_App\bin\x64\Debug\NationalInstruments.DAQmx.xml
-C:\Users\GradientChamber\source\repos\GC_App\obj\x64\Debug\GC_App.csprojAssemblyReference.cache
 C:\Users\GradientChamber\source\repos\GC_App\obj\x64\Debug\GC_App.csproj.CoreCompileInputs.cache
 C:\Users\GradientChamber\source\repos\GC_App\obj\x64\Debug\GC_App.csproj.CopyComplete
 C:\Users\GradientChamber\source\repos\GC_App\obj\x64\Debug\GC_App.exe
 C:\Users\GradientChamber\source\repos\GC_App\obj\x64\Debug\GC_App.pdb
 C:\Users\GradientChamber\source\repos\GC_App\bin\x64\Debug\Pastel.dll
 C:\Users\GradientChamber\source\repos\GC_App\bin\x64\Debug\Pastel.xml
+C:\Users\GradientChamber\source\repos\GC_App\obj\x64\Debug\GC_App.csproj.AssemblyReference.cache

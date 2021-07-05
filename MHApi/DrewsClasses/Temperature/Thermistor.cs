@@ -171,7 +171,7 @@ namespace MHApi.DrewsClasses.Temperature{
                 case ThermistorType.LFplastic:
                     return -23.4081*Math.Log(r) + 240.9442;
                 default:
-                    return (-15/RBridge)*r;
+                    return r; //(-15/RBridge)*r;
             }
         }
 
