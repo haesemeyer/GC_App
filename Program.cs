@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.IO;
 using System.Drawing;
 using System.Threading;
@@ -20,12 +21,7 @@ namespace GC_App
         const int NUM_THERMISTORS = 6;
         const int MIN_TEMP = 18;
         const int MAX_TEMP = 42;
-        const int MAIN_LOOP_FREQ = 1/10*1000; // (1/Freq)*unit conversion [=] millisecond
-        //controller properties
-        static double KI;
-        static double KP;
-        static double KD;
-        static double VEL;
+        const int MAIN_LOOP_FREQ = 1 / 10 * 1000; // (1/Freq)*unit conversion [=] millisecond
         //console display
         const int CONSOLE_WIDTH = 60;
         const int CONSOLE_HEIGHT = 28;
@@ -35,10 +31,20 @@ namespace GC_App
         static readonly int[] TEMP_COLS = { 11, 28, 45 };
         //general variables
         static object _printLock = new object();  //lock object used to set cursor
-        static string _save_file;  //location to save file
+        static string _pathString; //location to save file directory
+        static string _saveFile;  //location to save file
         static int _peltier_config;
         static double[] _temps = new double[NUM_PELTIERS];
+        //file locations and text
         static readonly string[] _schematic = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\temp_display.txt");
+        static readonly string[] _config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
+        static readonly string[] _info = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\session-info.txt");
+        //controller properties with defaults
+        static double _kP = 0.01; // 0.01
+        static double _kI = 0.005; // 0.005
+        static double _kD = 0.005; // 0.005
+        static double _vel = 0.25; // 0.25
+        static bool _controlRunning = false;
 
         //set up daq board
         static PCIe6323 _daq = new PCIe6323("dev1", PCIe6323.AIReadTriggerType.None);
@@ -63,12 +69,10 @@ namespace GC_App
         //create temperature controllers and parameters
         static TemperatureController[] _tempControl =
         {
-            new TemperatureController(_thermistors[1], _peltier[2], KP, KI, KD, VEL, "TController1"),
-            new TemperatureController(_thermistors[3], _peltier[1], KP, KI, KD, VEL, "TController2"),
-            new TemperatureController(_thermistors[5], _peltier[0], KP, KI, KD, VEL, "TController3")
+            new TemperatureController(_thermistors[1], _peltier[2], _kP, _kI, _kD, _vel, "TController1"),
+            new TemperatureController(_thermistors[3], _peltier[1], _kP, _kI, _kD, _vel, "TController2"),
+            new TemperatureController(_thermistors[5], _peltier[0], _kP, _kI, _kD, _vel, "TController3")
         };
-        static bool _controlRunning = false;
-        static double _KP; static double _KI; static double _KD;
 
         //create reset events
         static AutoResetEvent _tempGet = new AutoResetEvent(false);
@@ -93,18 +97,15 @@ namespace GC_App
             Console.SetBufferSize(CONSOLE_WIDTH, CONSOLE_HEIGHT);
 
             // Obtain session information for save file
-            string[] info = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\session-info.txt");
-            string tmpFolder = @"C:\Users\GradientChamber\Desktop\GCtmp\";
-            string calFolder = @"C:\Users\GradientChamber\Desktop\GCcal\";
-            var regex = new Regex(".*(Desktop.*)$");  //string matching to print truncated version of file path
-           
             // File variables
-            string experimenter = null; 
+            string experimenter = null;
             string session_id = null;
             string origin_timestamp = _time.ToString("yyMMdd_HH_mm");
+            string folderName = @"C:\Users\GradientChamber\Desktop\GCtemps\";
+            var regex = new Regex(".*(Desktop.*)$");  //string matching to print truncated version of file pat
 
             // Loop variables
-            ConsoleKeyInfo cki1; 
+            ConsoleKeyInfo cki1;
             bool infopass = false;
             // User input loop for file path information
             lock (_printLock)
@@ -113,7 +114,7 @@ namespace GC_App
                 {
                     //print splash screen, and obtain user info
                     Console.SetCursorPosition(0, 0);
-                    PrintFile(info);
+                    PrintFile(_info);
                     ClearLine(20); Console.SetCursorPosition(0, 20);
                     Console.Write($"\t\t{"Timestamp".Pastel(Color.MediumVioletRed)}: " + origin_timestamp);
                     //user name input
@@ -126,13 +127,13 @@ namespace GC_App
                     session_id = Console.ReadLine();
 
                     //create experimeter directory if it does not exist
-                    string pathString = Path.Combine(tmpFolder, Regex.Replace(experimenter.ToLower(), @"\s+", ""));
-                    if (!Directory.Exists(pathString))
+                    _pathString = Path.Combine(folderName, Regex.Replace(experimenter.ToLower(), @"\s+", ""));
+                    if (!Directory.Exists(_pathString))
                     {
                         try
                         {
-                            Directory.CreateDirectory(pathString);
-                            _save_file = Path.Combine(pathString,  origin_timestamp + "_" + session_id + ".txt");
+                            Directory.CreateDirectory(_pathString);
+                            _saveFile = Path.Combine(_pathString, origin_timestamp + "_" + session_id + ".txt");
                             infopass = true;
                         }
                         catch
@@ -144,16 +145,16 @@ namespace GC_App
                     }
                     else
                     {
-                        _save_file = Path.Combine(pathString,  origin_timestamp + "_" + session_id + ".txt");
+                        _saveFile = Path.Combine(_pathString, origin_timestamp + "_" + session_id + ".txt");
                         infopass = true;
                     }
 
                     //redo if the directory could not be made, or if the user wishes to
-                    if (infopass && IsValidPath(_save_file))
+                    if (infopass && IsValidPath(_saveFile))
                     {
                         ClearLine(23); ClearLine(24); Console.SetCursorPosition(0, 23);
                         Console.WriteLine($"\t\t{"Save file location".Pastel(Color.MediumVioletRed)}:\n\t" +
-                                            regex.Match(_save_file).Groups[1].Value);
+                                            regex.Match(_saveFile).Groups[1].Value);
                         Console.Write("\n\tPress R to redo, any other key continues");
                         cki1 = Console.ReadKey(true);
                         if (cki1.Key == ConsoleKey.R || cki1.Key == ConsoleKey.Escape)
@@ -172,23 +173,16 @@ namespace GC_App
                 Console.Clear(); Console.SetCursorPosition(0, 0);
             }
 
-            // Begin new file and write to it            
-            _ = WriteAsync(String.Format("Experimenter: {0}", experimenter));
-            _ = WriteAsync(String.Format("Session ID: {0}", session_id));
-            _ = WriteAsync(String.Format("Start time: {0}", _time.ToString("MM/dd/yyyy hh:mm tt")));
-            _ = WriteAsync("\nTime(s)\tAI0\tAI1\tAI2\tAI3\tAI4\tAI5");
-
             // Obtain peltier configuration and initialize recording thread,
             // recording thermal data at different rate if calibrating
-            string[] config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
-			lock (_printLock)
-			{
-				PrintFile(config);
+            lock (_printLock)
+            {
+                PrintFile(_config);
                 do
                 {
                     ClearLine(24); Console.SetCursorPosition(0, 24);
                     Console.Write($"\t\t{"Enter peltier configuration".Pastel(Color.MediumVioletRed)}: ");
-                } while (!int.TryParse(Console.ReadLine(), out _peltier_config) || 
+                } while (!int.TryParse(Console.ReadLine(), out _peltier_config) ||
                          Math.Abs(_peltier_config) > 4 || _peltier_config == 0);
 
                 // If calibrating, obtain new PID values from user
@@ -198,41 +192,47 @@ namespace GC_App
                     {
                         ClearLine(25); Console.SetCursorPosition(0, 25);
                         Console.Write($"\t\t{"Proprotional value, P: ".Pastel(Color.SeaGreen)}: ");
-                    } while (!double.TryParse(Console.ReadLine(), out _KP) || _KP < 0);
+                    } while (!double.TryParse(Console.ReadLine(), out _kP) || _kP < 0);
 
                     do
                     {
                         ClearLine(26); Console.SetCursorPosition(0, 26);
                         Console.Write($"\t\t{"Integral value, I: ".Pastel(Color.SeaGreen)}: ");
-                    } while (!double.TryParse(Console.ReadLine(), out _KI) || _KI < 0);
+                    } while (!double.TryParse(Console.ReadLine(), out _kI) || _kI < 0);
 
                     do
                     {
                         ClearLine(27); Console.SetCursorPosition(0, 27);
                         Console.Write($"\t\t{"Derivative value, D: ".Pastel(Color.SeaGreen)}: ");
-                    } while (!double.TryParse(Console.ReadLine(), out _KD) || _KD < 0);
-                    
+                    } while (!double.TryParse(Console.ReadLine(), out _kD) || _kD < 0);
+
                     _TWworker = new WorkerT<int>(TWloop, 100, false); //set record rate
                 }
                 else // Otherwise load last saved by user
                 {
-                    KI = 5e-5;
-                    KP = 0.05;
-                    KD = 0.01;
-                    VEL = 0.01;
+                    // Load last saved PID controller
+                    // waiting....
+                    double[] tmp = PIDcontrols(_pathString);
+                    // Begin text writer loop
                     _TWworker = new WorkerT<int>(TWloop, 1000, false); //set record rate
                 }
 
                 Console.Clear(); Console.SetCursorPosition(0, 0);
-			}
-            
+            }
+
+            // Begin new file and write to it            
+            _ = WriteAsync(_saveFile, String.Format("Experimenter: {0}", experimenter));
+            _ = WriteAsync(_saveFile, String.Format("Session ID: {0}", session_id));
+            _ = WriteAsync(_saveFile, String.Format("Start time: {0}", _time.ToString("MM/dd/yyyy hh:mm tt")));
+            _ = WriteAsync(_saveFile, "\nTime(s)\tAI0\tAI1\tAI2\tAI3\tAI4\tAI5");
+
             // Initialize system
             _temps = GetTemps();                // (1) get initial temperatures from user
             _daq.AI.Start(2500, 100);           // (2) Begin AI
             _daq.AI.ReadThreadReady.WaitOne();  // (3) Wait for AI system
             _IOworker.Start();          // (4) begin (DAQ) printing values from thermistors
             _TWworker.Start();          // (5) begin writing values from thermistors
-			StartTemperatureControl();  // (6) begin control loop
+            StartTemperatureControl();  // (6) begin control loop
 
             // User input and console update loop
             Console.CursorVisible = false;
@@ -258,7 +258,7 @@ namespace GC_App
                     case ConsoleKey.S:
                         _ts += 1;
                         _ts_time = DateTime.Now;
-                        _ = WriteAsync(String.Format("Timestamp #{0} + {1}", 
+                        _ = WriteAsync(_saveFile, String.Format("Timestamp #{0} + {1}",
                             _ts, TimeSpan.FromTicks(_ts_time.Ticks - _time.Ticks).TotalSeconds.ToString("0.000")));
                         break;
                     default:
@@ -295,67 +295,67 @@ namespace GC_App
                     for (int i = 0; i < NUM_THERMISTORS; i++)
                     {
                         if (i % 2 == 0)
-                            PrintTemp(TEMP_COLS[i/2], TEMP_DISP_ROW - 1, _thermistors[i].Temperature.ToString("0.000") + "°C ");
+                            PrintTemp(TEMP_COLS[i / 2], TEMP_DISP_ROW - 1, _thermistors[i].Temperature.ToString("0.000") + "°C ");
                         else
-                            PrintTemp(TEMP_COLS[(i-1)/2], TEMP_DISP_ROW, _thermistors[i].Temperature.ToString("0.000") + "°C ");
+                            PrintTemp(TEMP_COLS[(i - 1) / 2], TEMP_DISP_ROW, _thermistors[i].Temperature.ToString("0.000") + "°C ");
                     }
 
                     // Time display
                     ClearLine(TIMESTAMP_ROW);
                     Console.Write($"{"Time since stamp #{0}:".Pastel(Color.MediumVioletRed)}", _ts);
                     Console.SetCursorPosition(CONSOLE_WIDTH - 9, TIMESTAMP_ROW);
-					Console.Write($"{"{0}".Pastel(Color.MediumVioletRed)}", TimeSpan.FromTicks(DateTime.Now.Ticks - _ts_time.Ticks).ToString(@"hh\:mm\:ss"));
-				}
+                    Console.Write($"{"{0}".Pastel(Color.MediumVioletRed)}", TimeSpan.FromTicks(DateTime.Now.Ticks - _ts_time.Ticks).ToString(@"hh\:mm\:ss"));
+                }
 
-				// Halt printing if user updates temperatures
-				if (_tempGet.WaitOne(100)) _tempGot.WaitOne();
+                // Halt printing if user updates temperatures
+                if (_tempGet.WaitOne(100)) _tempGot.WaitOne();
             }
         }
-		#endregion Console loop
+        #endregion Console loop
 
-		#region Text writer loop
+        #region Text writer loop
         static void TWloop(AutoResetEvent stop, int period)
-		{
+        {
             Thread.Sleep(period); // wait a period for DAQ
             while (!stop.WaitOne(period))
             {
                 // Print temperatures to file
-                _ = WriteAsync(String.Format("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}",
+                _ = WriteAsync(_saveFile, String.Format("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}",
                                 TimeSpan.FromTicks(DateTime.Now.Ticks - _time.Ticks).TotalSeconds.ToString("0.000"),
                                 _thermistors[0].Temperature.ToString("0.000"), _thermistors[1].Temperature.ToString("0.000"),
                                 _thermistors[2].Temperature.ToString("0.000"), _thermistors[3].Temperature.ToString("0.000"),
                                 _thermistors[4].Temperature.ToString("0.000"), _thermistors[5].Temperature.ToString("0.000")));
             }
-            
+
         }
 
-		#endregion Text writer loop
+        #endregion Text writer loop
 
-		#region Temperature controlling
-		/// <summary>
-		/// Starts the AI reading service and hence temperature control
-		/// </summary>
-		static public void StartTemperatureControl()
+        #region Temperature controlling
+        /// <summary>
+        /// Starts the AI reading service and hence temperature control
+        /// </summary>
+        static public void StartTemperatureControl()
         {
             //set target temperatures
             _tempControl[0].TargetTemperature = _temps[0];
             _tempControl[1].TargetTemperature = _temps[1];
             _tempControl[2].TargetTemperature = _temps[2];
             //set control parameters
-            _tempControl[0].KI = _tempControl[1].KI = _tempControl[2].KI = KI;
-            _tempControl[0].KP = _tempControl[1].KP = _tempControl[2].KP = KP;
-            _tempControl[0].KD = _tempControl[1].KD = _tempControl[2].KD = KD;
-            _tempControl[0].Velocity = _tempControl[1].Velocity = _tempControl[2].Velocity = VEL;
+            _tempControl[0].KI = _tempControl[1].KI = _tempControl[2].KI = _kI;
+            _tempControl[0].KP = _tempControl[1].KP = _tempControl[2].KP = _kP;
+            _tempControl[0].KD = _tempControl[1].KD = _tempControl[2].KD = _kD;
+            _tempControl[0].Velocity = _tempControl[1].Velocity = _tempControl[2].Velocity = _vel;
             //start temperature controllers
             foreach (TemperatureController tc in _tempControl)
                 tc.Start();
             _controlRunning = true;
         }
 
-		/// <summary>
-		/// Stops the AI reading service and hence temperature control
-		/// </summary>
-		static public void StopTemperatureControl()
+        /// <summary>
+        /// Stops the AI reading service and hence temperature control
+        /// </summary>
+        static public void StopTemperatureControl()
         {
             if (!_controlRunning)
                 return;
@@ -398,19 +398,19 @@ namespace GC_App
 
         #region Get temperatures from user
         static double[] GetTemps()
-		{
+        {
             double[] temps = new double[NUM_PELTIERS];
             lock (_printLock)
             {
                 // Clear consoles lines
                 ClearLine(0); ClearLine(INPUT_TEMP_ROW); Console.CursorVisible = true;
                 // Display schematic
-                PrintFile(_schematic);                
+                PrintFile(_schematic);
                 // Accept new temps
                 switch (_peltier_config)
                 {
                     case 1:
-                        Console.SetCursorPosition(TEMP_COLS[1]+1, INPUT_TEMP_ROW); 
+                        Console.SetCursorPosition(TEMP_COLS[1] + 1, INPUT_TEMP_ROW);
                         Console.Write('X');
                         temps[0] = ReadTemp(TEMP_COLS[0], INPUT_TEMP_ROW);
                         temps[2] = ReadTemp(TEMP_COLS[2], INPUT_TEMP_ROW);
@@ -430,23 +430,23 @@ namespace GC_App
             }
             return temps;
         }
-		#endregion Get temperatures from user
+        #endregion Get temperatures from user
 
-		#region Print temperatures to console
+        #region Print temperatures to console
         static void PrintTemp(int col, int row, string str_temp)
-		{
-            Console.SetCursorPosition(col-2, row);
+        {
+            Console.SetCursorPosition(col - 2, row);
             Console.Write("         \b\b\b\b\b\b\b\b\b"); //clears text
-            Console.Write(str_temp); 
+            Console.Write(str_temp);
         }
-		#endregion Print temperatures to console
+        #endregion Print temperatures to console
 
-		#region Temperature input user-proofing 
+        #region Temperature input user-proofing 
         static double ReadTemp(int col, int row)
-		{
+        {
             double temp;
             Console.SetCursorPosition(col, row);
-            while(!double.TryParse(Console.ReadLine(), out temp) || temp < MIN_TEMP || temp > MAX_TEMP)
+            while (!double.TryParse(Console.ReadLine(), out temp) || temp < MIN_TEMP || temp > MAX_TEMP)
             {
                 Console.SetCursorPosition(col, row);
                 Console.Write("      \b\b\b\b\b\b");
@@ -482,15 +482,62 @@ namespace GC_App
         #endregion Clear console line
 
         #region Write to file
-        public static async Task WriteAsync(string Line)
+        public static async Task WriteAsync(string save_file, string Line)
         {
-            using (StreamWriter file = new StreamWriter(_save_file, append: true))
+            using (StreamWriter file = new StreamWriter(save_file, append: true))
                 await file.WriteLineAsync(Line);
         }
         #endregion Write to file
 
-        #region Is file path valid
-        static bool IsValidPath(string path, bool allowRelativePaths = false)
+        #region PID controller values from file
+        public static double[] PIDcontrols(string directory)
+		{
+            //locate latest file in experimenter directory
+            var dirInfo = new DirectoryInfo(directory);
+            var latestFile = dirInfo.GetFiles()
+                         .OrderByDescending(f => f.LastWriteTime)
+                         .FirstOrDefault();
+            double[] ctrls;
+
+            //search for "Controls:" line in file and exit
+            if (latestFile != null)
+			{
+                try
+                {
+                    foreach (string line in File.ReadLines(latestFile.FullName))
+                    {
+                        if (line.IndexOf("Controls", StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            Match controls = Regex.Match(line, @"\d+\.\d+\D+\d+\.\d+\D+\d+\.\d+\D+\d+\.\d+");
+                            ctrls = Array.ConvertAll(controls.Value.Split(new string[] { ", " }, 
+                                                     StringSplitOptions.RemoveEmptyEntries), Double.Parse);
+                            if (ctrls.Length < 4)
+                            {
+                                throw new ArgumentException();
+							}
+                            return ctrls;
+                        }              
+                    }
+                    ctrls = new double[] { _kP, _kI, _kD, _vel }; //defaults
+                    return ctrls;
+                }
+                catch
+				{
+                    ctrls = new double[] { _kP, _kI, _kD, _vel }; //defaults
+                    return ctrls;
+				}
+            }
+			else
+			{
+                ctrls = new double[] { _kP, _kI, _kD, _vel }; //defaults
+                return ctrls;
+            }
+
+        }
+		#endregion PID controller values from file
+
+		#region Is file path valid
+		static bool IsValidPath(string path, bool allowRelativePaths = false)
         {
             bool isValid;
             try
