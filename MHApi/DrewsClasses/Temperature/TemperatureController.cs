@@ -22,7 +22,7 @@ namespace MHApi.DrewsClasses.Temperature{
         object lockObject = new object();
         bool isRunning;
         double setPoint;
-        double dt = 1.0/10.0; //this means, that a velocity of 1 will ramp the setpoint by one degree within one second considering our framerate
+        double dt = 1.0 / 10.0; //this means, that a velocity of 1 will ramp the setpoint by one degree within one second considering our framerate
         double dutyCycle = 0;
         //private int ControllerNum { get; set; }
 
@@ -52,16 +52,11 @@ namespace MHApi.DrewsClasses.Temperature{
         }
 
         double targetTemperature = 23;
-        double curTemp; 
+        double curTemp;
         public double CurTemp {
             get { return curTemp; }
             set { curTemp = value; RaisePropertyChanged("CurTemp"); }
         }
-        double preTemp;
-        public double PreTemp {
-            get { return preTemp; }
-            set { preTemp = value; RaisePropertyChanged("PreTemp");  }
-		}
 
         /// <summary>
         /// Gets or sets the current target temperature
@@ -90,9 +85,16 @@ namespace MHApi.DrewsClasses.Temperature{
         }
 
         double _kD;
-        public double KD { 
+        public double KD {
             get { return _kD; }
             set { _kD = value; RaisePropertyChanged("KD"); }
+        }
+
+        double? _previousError;
+        public double? PreviousError
+        {
+            get { return _previousError; }
+            private set { _previousError = value; }
         }
 
         double _integralOfError;
@@ -266,8 +268,6 @@ namespace MHApi.DrewsClasses.Temperature{
         /// <param name="e"></param>
         void ThermistorPropertyChanged(object sender, PropertyChangedEventArgs e) {
             lock (lockObject) {
-                //CurTemp = Thermistor.Temperature;
-
                 if (!IsRunning) return;
 
                 //if controllers have detected an intergral fault we cease all operation
@@ -290,31 +290,43 @@ namespace MHApi.DrewsClasses.Temperature{
                     if (setPoint > TargetTemperature)
                         setPoint = TargetTemperature;
                 }
-                
-                // set temperatures, calculate derivative
-                PreTemp = CurTemp;
+
+                //Sets temperature
                 CurTemp = TheThermistor.Temperature;
-                Derivative = (CurTemp - PreTemp) / dt;
 
                 //Detect temperature fault condition
                 if (CurTemp > MaximumTemperature || CurTemp < MinimumTemperature)
                 {
                     if (!TemperatureFault)
-                        System.Diagnostics.Debug.WriteLine("Temperature fault set, current temperature {0} C", CurTemp);
+                        Debug.WriteLine("Temperature fault set, current temperature {0} C", CurTemp);
                     TemperatureFault = true;
                     ThePeltier.DutyCycle = 0;//switch off peltier
                     return;
                 }
                 else if (TemperatureFault)
                 {
-                    System.Diagnostics.Debug.WriteLine("Temperature fault reset");
+                    Debug.WriteLine("Temperature fault reset");
                     TemperatureFault = false;
                 }
 
+                //Calculate error
                 double error = setPoint - CurTemp;
+
+                //Set temperatures, calculate derivative
+                if (PreviousError.HasValue)
+                {
+                    Derivative = (double)((error - PreviousError) / dt);
+                    PreviousError = error;
+                }
+                else
+                {
+                    PreviousError = error;
+                    Derivative = 0;
+                }
+
+                //Adds to integrator
                 //System.Diagnostics.Debug.WriteLine(setPoint);
                 IntegralOfError += error;
-
                 //Detect error integral fault condition
                 if (Math.Abs(IntegralOfError) > _maxError)
                 {
@@ -323,30 +335,29 @@ namespace MHApi.DrewsClasses.Temperature{
                     if (_maxError > 20000000) // 20000
                     {//very relaxed triggering at the moment
                         IntegralFault = true;
-                        System.Diagnostics.Debug.WriteLine("Integral fault triggered, shutting down all controllers.",_controllerName);
+                        Debug.WriteLine("Integral fault triggered, shutting down all controllers.",_controllerName);
                         ThePeltier.DutyCycle = 0;
                         return;
                     }
                 }
 
-                //slightly increase effective kp for cooling - above 30C below 30C we decrease
-                //the contribution of the Integral error term but ONLY if the integral of the error
-                //is also <0
-                //if (error > 0)
-                //    dutyCycle = KP * error + KI * IntegralOfError + KD * Derivative;
-                //else
-                //{
-                //    if(CurTemp>30)
-                //        dutyCycle = KP * error * 1.4 + KI * IntegralOfError;
-                //    else if(IntegralOfError>0)
-                //        dutyCycle = KP * error * 0.8 + KI * IntegralOfError;
-                //    else
-                //        dutyCycle = KP * error * 0.8 + KI * IntegralOfError*0.5;
-                //    //dutyCycle = KP * error * 1.4 + KI * IntegralOfError;
-                //}
-                //System.Diagnostics.Debug.WriteLine(dutyCycle);
-                dutyCycle = KP * error + KI * IntegralOfError + KD * Derivative;
-
+				//slightly increase effective kp for cooling - above 30C below 30C we decrease
+				//the contribution of the Integral error term but ONLY if the integral of the error
+				//is also <0
+				//if (error > 0)
+				//    dutyCycle = KP * error + KI * IntegralOfError + KD * Derivative;
+				//else
+				//{
+				//    if(CurTemp>30)
+				//        dutyCycle = KP * error * 1.4 + KI * IntegralOfError;
+				//    else if(IntegralOfError>0)
+				//        dutyCycle = KP * error * 0.8 + KI * IntegralOfError;
+				//    else
+				//        dutyCycle = KP * error * 0.8 + KI * IntegralOfError*0.5;
+				//    //dutyCycle = KP * error * 1.4 + KI * IntegralOfError;
+				//}
+				
+				dutyCycle = KP * error + KI * IntegralOfError + KD * Derivative;
                 if (dutyCycle >= 0 && dutyCycle < MaxDutyCycle) {
                     ThePeltier.PeltierMode = PeltierModes.Heat;
                     ThePeltier.DutyCycle = dutyCycle;
@@ -360,6 +371,7 @@ namespace MHApi.DrewsClasses.Temperature{
                     ThePeltier.PeltierMode = PeltierModes.Heat;
                     ThePeltier.DutyCycle = MaxDutyCycle;
                 }
+                Debug.WriteLine("Controller {0}: {1:0.00}%", _controllerName, ThePeltier.DutyCycle);
                 //Debug.WriteLine(ThePeltier.PeltierMode);
             }
         }

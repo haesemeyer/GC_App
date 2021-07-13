@@ -119,7 +119,7 @@ namespace MHApi.DrewsClasses.Temperature {
     }
 
     public enum PeltierModes {
-        Heat,
-        Cool
+        Heat=1,
+        Cool=-1
     }
 }

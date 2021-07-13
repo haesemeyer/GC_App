@@ -20,7 +20,7 @@ namespace GC_App
         const int NUM_PELTIERS = 3;
         const int NUM_THERMISTORS = 6;
         const int MIN_TEMP = 18;
-        const int MAX_TEMP = 42;
+        const int MAX_TEMP = 54;
         const int MAIN_LOOP_FREQ = 1 / 10 * 1000; // (1/Freq)*unit conversion [=] millisecond
         //console display
         const int CONSOLE_WIDTH = 60;
@@ -40,10 +40,10 @@ namespace GC_App
         static readonly string[] _config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
         static readonly string[] _info = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\session-info.txt");
         //controller properties with defaults
-        static double _kP = 0.01; // 0.01
-        static double _kI = 0.005; // 0.005
-        static double _kD = 0.005; // 0.005
-        static double _vel = 0.25; // 0.25
+        static double _kP = 0.1;
+        static double _kI = 0.0002;
+        static double _kD = 0.05;
+        static double _vel = 0.025;
         static bool _controlRunning = false;
 
         //set up daq board
@@ -69,9 +69,9 @@ namespace GC_App
         //create temperature controllers and parameters
         static TemperatureController[] _tempControl =
         {
-            new TemperatureController(_thermistors[1], _peltier[2], _kP, _kI, _kD, _vel, "TController1"),
-            new TemperatureController(_thermistors[3], _peltier[1], _kP, _kI, _kD, _vel, "TController2"),
-            new TemperatureController(_thermistors[5], _peltier[0], _kP, _kI, _kD, _vel, "TController3")
+            new TemperatureController(_thermistors[1], _peltier[2], _kP, _kI, _kD, _vel, "Back_Controller"),
+            new TemperatureController(_thermistors[3], _peltier[1], _kP, _kI, _kD, _vel, "Mid_Controller"),
+            new TemperatureController(_thermistors[5], _peltier[0], _kP, _kI, _kD, _vel, "Front_Controller")
         };
 
         //create reset events
@@ -201,25 +201,25 @@ namespace GC_App
                     do
                     {
                         ClearLine(24); Console.SetCursorPosition(0, 24);
-                        Console.Write($"\t\t\t{"Proprotional, P: ".Pastel(Color.SeaGreen)}: ");
+                        Console.Write($"\t\t{"Proprotional, P: ".Pastel(Color.SeaGreen)}: ");
                     } while (!double.TryParse(Console.ReadLine(), out _kP) || _kP < 0);
 
                     do
                     {
                         ClearLine(25); Console.SetCursorPosition(0, 25);
-                        Console.Write($"\t\t\t{"Integral, I: ".Pastel(Color.SeaGreen)}: ");
+                        Console.Write($"\t\t{"Integral, I: ".Pastel(Color.SeaGreen)}: ");
                     } while (!double.TryParse(Console.ReadLine(), out _kI) || _kI < 0);
 
                     do
                     {
                         ClearLine(26); Console.SetCursorPosition(0, 26);
-                        Console.Write($"\t\t\t{"Derivative, D: ".Pastel(Color.SeaGreen)}: ");
+                        Console.Write($"\t\t{"Derivative, D: ".Pastel(Color.SeaGreen)}: ");
                     } while (!double.TryParse(Console.ReadLine(), out _kD) || _kD < 0);
 
                     do
                     {
                         ClearLine(27); Console.SetCursorPosition(0, 27);
-                        Console.Write($"\t\t\t{"Velocity, vel: ".Pastel(Color.SeaGreen)}: ");
+                        Console.Write($"\t\t{"Velocity, vel: ".Pastel(Color.SeaGreen)}: ");
                     } while (!double.TryParse(Console.ReadLine(), out _vel) || _vel < 0);
 
                     // Initialize text writer loop at 10Hz
@@ -251,9 +251,9 @@ namespace GC_App
             _ = WriteAsync(_saveFile, String.Format("Experimenter: {0}", experimenter));
             _ = WriteAsync(_saveFile, String.Format("Session ID: {0}", session_id));
             _ = WriteAsync(_saveFile, String.Format("Start time: {0}", _time.ToString("MM/dd/yyyy hh:mm tt")));
-            _ = WriteAsync(_saveFile, String.Format("Controls: {0}, {1}, {2}, {3}",
+            _ = WriteAsync(_saveFile, String.Format("PIDv: {0}, {1}, {2}, {3}",
                            _kP.ToString(), _kI.ToString(), _kD.ToString(), _vel.ToString()));
-            _ = WriteAsync(_saveFile, "\nTime(s)\tAI0\tAI1\tAI2\tAI3\tAI4\tAI5");
+            _ = WriteAsync(_saveFile, "\nTime(s)\tAI0\tAI1\tAI2\tAI3\tAI4\tAI5\tD_AI01\tD_AI23\tD_AI45");
             _TWworker.Start();                   // (5) begin writing values from thermistors
 
             // Initialize system -- Part III
@@ -286,6 +286,12 @@ namespace GC_App
                         _ts_time = DateTime.Now;
                         _ = WriteAsync(_saveFile, String.Format("Timestamp #{0} + {1}",
                             _ts, TimeSpan.FromTicks(_ts_time.Ticks - _time.Ticks).TotalSeconds.ToString("0.000")));
+                        break;
+                    case ConsoleKey.P:
+                        if (_tempControl[0].KP == 0)
+                            _tempControl[0].KP = _tempControl[1].KP = _tempControl[2].KP = 3;
+                            //_tempControl[0].KI = _tempControl[1].KI = _tempControl[2].KI = 0.77;
+                            //_tempControl[0].KD = _tempControl[1].KD = _tempControl[2].KD = 28.6;
                         break;
                     default:
                         continue;
@@ -342,11 +348,14 @@ namespace GC_App
             while (!stop.WaitOne(period))
             {
                 // Print temperatures to file
-                _ = WriteAsync(_saveFile, String.Format("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}",
+                _ = WriteAsync(_saveFile, String.Format("{0}\t{1}\t{2}\t{3}\t{4}\t{5}\t{6}\t{7}\t{8}\t{9}",
                                 TimeSpan.FromTicks(DateTime.Now.Ticks - _time.Ticks).TotalSeconds.ToString("0.000"),
                                 _thermistors[0].Temperature.ToString("0.000"), _thermistors[1].Temperature.ToString("0.000"),
                                 _thermistors[2].Temperature.ToString("0.000"), _thermistors[3].Temperature.ToString("0.000"),
-                                _thermistors[4].Temperature.ToString("0.000"), _thermistors[5].Temperature.ToString("0.000")));
+                                _thermistors[4].Temperature.ToString("0.000"), _thermistors[5].Temperature.ToString("0.000"),
+                                (_peltier[2].DutyCycle * (double)_peltier[2].PeltierMode).ToString("0.000"),
+                                (_peltier[1].DutyCycle * (double)_peltier[1].PeltierMode).ToString("0.000"),
+                                (_peltier[0].DutyCycle * (double)_peltier[0].PeltierMode).ToString("0.000")));
             }
         }
 
@@ -374,7 +383,7 @@ namespace GC_App
             _tempControl[0].Velocity = _tempControl[1].Velocity = _tempControl[2].Velocity = _vel;
             //start temperature controllers
             _tempControl[0].Start(); _tempControl[2].Start();
-            if (_peltier_config != 1) _tempControl[1].Start();
+            //if (_peltier_config != 1) _tempControl[1].Start();
             _controlRunning = true;
         }
 
@@ -495,32 +504,37 @@ namespace GC_App
         #endregion Print file to console
 
         #region PID controller values from file
-        public static double[] PIDcontrols(string directory)
+        public static double[] PIDcontrols(string directory)    
         {
             //locate latest file in experimenter directory
             var dirInfo = new DirectoryInfo(directory);
-            var latestFile = dirInfo.GetFiles()
+            var latestFile = dirInfo.GetFiles("*.txt")
                             .OrderByDescending(f => f.LastWriteTime)
                             .FirstOrDefault();
-            double[] ctrls;
+            double[] ctrls = new double[4];
 
-            //search for "Controls:" line in file and exit
+            //search for "PIDv:" line in file and exit
             if (latestFile != null)
             {
                 try
                 {
                     foreach (string line in File.ReadLines(latestFile.FullName).Take(10))
                     {
-                        if (line.IndexOf("Controls", StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (line.IndexOf("PIDv", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
-                            Match controls = Regex.Match(line, @"\d+\.\d+\D+\d+\.\d+\D+\d+\.\d+\D+\d+\.\d+");
-                            ctrls = Array.ConvertAll(controls.Value.Split(new string[] { ", " },
-                                                     StringSplitOptions.RemoveEmptyEntries), Double.Parse);
-                            if (ctrls.Length < 4)
-                                throw new ArgumentException();
-                            return ctrls;
-                        }
-                    }
+                            //find either 0.00 or 0E0 numbers, only
+                            MatchCollection controls = Regex.Matches(line, @"\d+(\.\d+)?(e-\d+)?", RegexOptions.IgnoreCase);
+							if (controls.Count < 4)
+								throw new ArgumentException();
+
+                            //convert match collection to double array
+							for (int i = 0; i < controls.Count; i++)
+							{
+                                ctrls[i] = double.Parse(controls[i].Value);
+							}
+							return ctrls;
+						}
+					}
                     ctrls = new double[] { _kP, _kI, _kD, _vel }; //defaults
                     return ctrls;
                 }
