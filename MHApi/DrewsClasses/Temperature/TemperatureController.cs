@@ -11,8 +11,10 @@ Copyright 2011 Drew Robson
 */
 
 using System;
+using System.Linq;
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Collections.Generic;
 
 namespace MHApi.DrewsClasses.Temperature{
     public class TemperatureController : INotifyPropertyChanged, IDisposable {
@@ -90,14 +92,28 @@ namespace MHApi.DrewsClasses.Temperature{
             set { _kD = value; RaisePropertyChanged("KD"); }
         }
 
-        double? _previousError;
-        public double? PreviousError
-        {
-            get { return _previousError; }
-            private set { _previousError = value; }
-        }
+        List<double?> _previousError = new List<double?>();
+		public double? PreviousError
+		{
+			get {
+                if (_previousError.Count < (int)(1/dt))
+                    return null;
+                else
+                    return _previousError[0]; 
+            }
+			private set { 
+                if (_previousError.Count < (int)(1/dt)) 
+                    _previousError.Add(value); 
+                else if (_previousError.Count == (int)(1/dt))
+				{
+                    _previousError.RemoveAt(0);
+                    _previousError.Add(value);
+				}
+                    
+            }
+		}
 
-        double _integralOfError;
+		double _integralOfError;
         public double IntegralOfError {
             get { return _integralOfError; }
             private set { _integralOfError = value; RaisePropertyChanged("IntegralOfError"); }
@@ -313,13 +329,15 @@ namespace MHApi.DrewsClasses.Temperature{
                 double error = setPoint - CurTemp;
 
                 //Set temperatures, calculate derivative
-                if (PreviousError.HasValue)
+                if (PreviousError != null)
                 {
+                    //Debug.WriteLine("{0} previous error: {1}", _controllerName, PreviousError);
                     Derivative = (double)((error - PreviousError) / dt);
                     PreviousError = error;
                 }
                 else
                 {
+                    //Debug.WriteLine("{0} -- null -- previous error: {1}", _controllerName, PreviousError);
                     PreviousError = error;
                     Derivative = 0;
                 }
@@ -371,7 +389,9 @@ namespace MHApi.DrewsClasses.Temperature{
                     ThePeltier.PeltierMode = PeltierModes.Heat;
                     ThePeltier.DutyCycle = MaxDutyCycle;
                 }
-                Debug.WriteLine("Controller {0}: {1:0.00}%", _controllerName, ThePeltier.DutyCycle);
+                Debug.WriteLine("{0} intregral of error: {1}, duty cycle: {2:0.00}", 
+                                _controllerName, IntegralOfError, ThePeltier.DutyCycle);
+                //Debug.WriteLine("Controller {0}: {1:0.00}%", _controllerName, ThePeltier.DutyCycle);
                 //Debug.WriteLine(ThePeltier.PeltierMode);
             }
         }
