@@ -68,10 +68,11 @@ namespace GC_App
         };
         //create temperature controllers and parameters
         static TemperatureController[] _tempControl =
+
         {
-            new TemperatureController(_thermistors[1], _peltier[2], _kP, _kI, _kD, _vel, "Back_Controller"),
+            new TemperatureController(_thermistors[1], _peltier[0], _kP, _kI, _kD, _vel, "Back_Controller"),
             new TemperatureController(_thermistors[3], _peltier[1], _kP, _kI, _kD, _vel, "Mid_Controller"),
-            new TemperatureController(_thermistors[5], _peltier[0], _kP, _kI, _kD, _vel, "Front_Controller")
+            new TemperatureController(_thermistors[5], _peltier[2], _kP, _kI, _kD, _vel, "Front_Controller")
         };
 
         //create reset events
@@ -383,7 +384,7 @@ namespace GC_App
             _tempControl[0].Velocity = _tempControl[1].Velocity = _tempControl[2].Velocity = _vel;
             //start temperature controllers
             _tempControl[0].Start(); _tempControl[2].Start();
-            //if (_peltier_config != 1) _tempControl[1].Start();
+            if (_peltier_config != 1) _tempControl[1].Start();
             _controlRunning = true;
         }
 
