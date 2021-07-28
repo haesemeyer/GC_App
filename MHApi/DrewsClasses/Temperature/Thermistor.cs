@@ -167,7 +167,7 @@ namespace MHApi.DrewsClasses.Temperature{
                 case ThermistorType.USsensor:
                     return -25.4255*Math.Log(r) + 259.4914;
                 case ThermistorType.LFpolyimide:
-                    return -27.3553*Math.Log(r) + 277.2705;
+                    return -27.33*Math.Log(r) + 275.80;
                 case ThermistorType.LFplastic:
                     return -23.4081*Math.Log(r) + 240.9442;
                 default:

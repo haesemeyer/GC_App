@@ -28,7 +28,7 @@ namespace GC_App
         const int TIMESTAMP_ROW = CONSOLE_HEIGHT - 1;
         const int INPUT_TEMP_ROW = 22;
         const int TEMP_DISP_ROW = 3;
-        static readonly int[] TEMP_COLS = { 11, 28, 45 };
+        static readonly int[] TEMP_COLS = { 13, 29, 47 };
         //general variables
         static object _printLock = new object();  //lock object used to set cursor
         static string _pathString; //location to save file directory
@@ -273,7 +273,6 @@ namespace GC_App
                         _TWworker.Stop();
                         _IOworker.Stop();
                         _exitEvent.Set();
-                        ClearLine(0);
                         break;
                     case ConsoleKey.U:
                         _tempGet.Set(); //holds DAQ printing
@@ -307,7 +306,8 @@ namespace GC_App
             // Keep the console open in debug mode.
             lock (_printLock)
             {
-                Console.SetCursorPosition(0, 25);
+                ClearLine(0);
+                Console.SetCursorPosition(0, 0);
                 Console.Write($"\t\t   {"Press any key to exit".Pastel(Color.AliceBlue)}.");
                 Console.ReadKey();
             }
@@ -494,12 +494,12 @@ namespace GC_App
             foreach (string line in lines)
             {
                 // Use a tab to indent each line of the file.
-                if (line == "| |  :               :                 :  | |")
-                    Console.WriteLine($"\t| |{"  :               :                 :  ".PastelBg(Color.DodgerBlue)}| | ");
+                if (line == "         | |  :               :                 :  | |")
+                    Console.WriteLine($"         | |{"  :               :                 :  ".PastelBg(Color.DodgerBlue)}| | ");
                 //else if (line == "| ---:---------------:-----------------:--- |")
                 //    Console.WriteLine($"\t| -{"--:---------------:-----------------:--".PastelBg(Color.DodgerBlue)}- | ");
                 else
-                    Console.WriteLine("\t" + line);
+                    Console.WriteLine(line);
             }
         }
         #endregion Print file to console
