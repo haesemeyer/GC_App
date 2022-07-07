@@ -1,7 +1,7 @@
             Enter temperatures for gradient chamber
 
-L
 R
+L
           ____:_______________:_________________:___
          /    :               :                 :   \
          |    :               :                 :    |
