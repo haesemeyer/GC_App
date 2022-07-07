@@ -40,10 +40,10 @@ namespace GC_App
         static readonly string[] _config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
         static readonly string[] _info = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\session-info.txt");
         //controller properties with defaults
-        static double _kP = 0.1;
-        static double _kI = 0.0002;
-        static double _kD = 0.05;
-        static double _vel = 0.025;
+        static double _kP = 0.0125; // 0.1;
+        static double _kI = 6.25e-6; // 5e-5;
+        static double _kD = 6.25e-3; // 0.05;
+        static double _vel = 3.125e-3; // 0.025;
         static bool _controlRunning = false;
 
         //set up daq board
@@ -324,9 +324,9 @@ namespace GC_App
                     for (int i = 0; i < NUM_THERMISTORS; i++)
                     {
                         if (i % 2 == 0)
-                            PrintTemp(TEMP_COLS[i / 2], TEMP_DISP_ROW - 1, _thermistors[i].Temperature.ToString("0.000") + "°C ");
+                            PrintTemp(TEMP_COLS[i / 2], TEMP_DISP_ROW, _thermistors[i].Temperature.ToString("0.000") + "°C ");
                         else
-                            PrintTemp(TEMP_COLS[(i - 1) / 2], TEMP_DISP_ROW, _thermistors[i].Temperature.ToString("0.000") + "°C ");
+                            PrintTemp(TEMP_COLS[(i - 1) / 2], TEMP_DISP_ROW - 1, _thermistors[i].Temperature.ToString("0.000") + "°C ");
                     }
 
                     // Time display
