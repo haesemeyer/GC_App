@@ -154,6 +154,11 @@ namespace MHApi.DrewsClasses.Temperature{
             return RBridge * (vS - 2 * v) / (vS + 2 * v);
         }
 
+        // Steinhart-Hart Coefficients for a standard J-type thermistor
+        const double SH_A = 1.129241e-3;
+        const double SH_B = 2.341077e-4;
+        const double SH_C = 8.775468e-8;
+
         /// <summary>
         /// Uses the temperature lookup table to convert a resistance into
         /// a thermistor temperature
@@ -162,6 +167,7 @@ namespace MHApi.DrewsClasses.Temperature{
         /// <param name="type">The type of thermistor</param>
         /// <returns>The temperature of the thermistor</returns>
         public static double ConvertRToT(double r, ThermistorType type) {
+            System.Diagnostics.Debug.WriteLine("Measured resistance = {0}", r);
             switch (type)
             {
                 case ThermistorType.USsensor:
@@ -169,7 +175,10 @@ namespace MHApi.DrewsClasses.Temperature{
                 case ThermistorType.LFpolyimide:
                     return -27.33*Math.Log(r) + 275.80;
                 case ThermistorType.LFplastic:
-                    return -23.4081*Math.Log(r) + 240.9442;
+                    double ln_r = Math.Log(r);
+                    double temp_k = 1.0 / (SH_A + SH_B * ln_r + SH_C * (ln_r * ln_r * ln_r));
+                    return temp_k - 273.15;
+                    //return -23.4081*Math.Log(r) + 240.9442;
                 default:
                     return r; //(-15/RBridge)*r;
             }

@@ -19,7 +19,7 @@ namespace GC_App
         //gradient chamber design
         const int NUM_PELTIERS = 3;
         const int NUM_THERMISTORS = 6;
-        const int MIN_TEMP = 18;
+        const int MIN_TEMP = 16;
         const int MAX_TEMP = 54;
         const int MAIN_LOOP_FREQ = 1 / 10 * 1000; // (1/Freq)*unit conversion [=] millisecond
         //console display
@@ -52,12 +52,12 @@ namespace GC_App
         //create thermistors
         static Thermistor[] _thermistors =
         {
-            new Thermistor(_daq, "ai0", ThermistorType.LFpolyimide),
-            new Thermistor(_daq, "ai1", ThermistorType.LFpolyimide),
-            new Thermistor(_daq, "ai2", ThermistorType.LFpolyimide),
-            new Thermistor(_daq, "ai3", ThermistorType.LFpolyimide),
-            new Thermistor(_daq, "ai4", ThermistorType.LFpolyimide),
-            new Thermistor(_daq, "ai5", ThermistorType.LFpolyimide)
+            new Thermistor(_daq, "ai0", ThermistorType.LFplastic),
+            new Thermistor(_daq, "ai1", ThermistorType.LFplastic),
+            new Thermistor(_daq, "ai2", ThermistorType.LFplastic),
+            new Thermistor(_daq, "ai3", ThermistorType.LFplastic),
+            new Thermistor(_daq, "ai4", ThermistorType.LFplastic),
+            new Thermistor(_daq, "ai5", ThermistorType.LFplastic)
         };
         //create peltier
         static Peltier[] _peltier =
@@ -228,12 +228,14 @@ namespace GC_App
                 }
                 else // Otherwise load last saved by user
                 {
+                    // Do nothing and keep defaults
+
                     // Load last saved PID controller
-                    double[] ctrls = PIDcontrols(_pathString);
-                    _kP = ctrls[0];
-                    _kI = ctrls[1];
-                    _kD = ctrls[2];
-                    _vel = ctrls[3];
+                    //double[] ctrls = PIDcontrols(_pathString);
+                    //_kP = ctrls[0];
+                    //_kI = ctrls[1];
+                    //_kD = ctrls[2];
+                    //_vel = ctrls[3];
 
                     // Initialize text writer loop at 1Hz
                     _TWworker = new WorkerT<int>(TWloop, 1000, false); //set record rate
