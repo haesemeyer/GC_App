@@ -40,10 +40,10 @@ namespace GC_App
         static readonly string[] _config = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\peltier_config.txt");
         static readonly string[] _info = File.ReadAllLines(@"C:\Users\GradientChamber\source\repos\GC_App\session-info.txt");
         //controller properties with defaults
-        static double _kP = 0.0125; // 0.1;
-        static double _kI = 6.25e-6; // 5e-5;
-        static double _kD = 6.25e-3; // 0.05;
-        static double _vel = 3.125e-3; // 0.025;
+        static double _kP = 0.0125*1; // 0.1;
+        static double _kI = 6.25e-6*1; // 5e-5;
+        static double _kD = 6.25e-3*1; // 0.05;
+        static double _vel = 3.125e-3*1; // 0.025;
         static bool _controlRunning = false;
 
         //set up daq board
@@ -70,9 +70,9 @@ namespace GC_App
         static TemperatureController[] _tempControl =
 
         {
-            new TemperatureController(_thermistors[1], _peltier[0], _kP, _kI, _kD, _vel, "Back_Controller"),
-            new TemperatureController(_thermistors[3], _peltier[1], _kP, _kI, _kD, _vel, "Mid_Controller"),
-            new TemperatureController(_thermistors[5], _peltier[2], _kP, _kI, _kD, _vel, "Front_Controller")
+            new TemperatureController(_thermistors[1], _thermistors[0], _peltier[0], _kP, _kI, _kD, _vel, "Back_Controller"),
+            new TemperatureController(_thermistors[3], _thermistors[2], _peltier[1], _kP, _kI, _kD, _vel, "Mid_Controller"),
+            new TemperatureController(_thermistors[5], _thermistors[4], _peltier[2], _kP, _kI, _kD, _vel, "Front_Controller")
         };
 
         //create reset events

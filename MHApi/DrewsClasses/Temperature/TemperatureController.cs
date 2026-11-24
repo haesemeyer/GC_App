@@ -18,7 +18,8 @@ using System.Collections.Generic;
 
 namespace MHApi.DrewsClasses.Temperature{
     public class TemperatureController : INotifyPropertyChanged, IDisposable {
-        public Thermistor TheThermistor { get; private set; }
+        public Thermistor Thermistor1 { get; private set; }
+        public Thermistor Thermistor2 { get; private set; }
         public Peltier ThePeltier { get; private set; }
 
         object lockObject = new object();
@@ -235,15 +236,18 @@ namespace MHApi.DrewsClasses.Temperature{
         /// <summary>
         /// Set up temperature controller
         /// </summary>
-        /// <param name="thermistor">The thermistor of the thermistor/peltier pair controlling this segment</param>
+        /// <param name="thermistor1">The first thermistor of the thermistor/peltier pair controlling this segment</param>
+        /// <param name="thermistor2">The second thermistor of the thermistor/peltier pair controlling this segment</param>
         /// <param name="peltier">The peltier of the thermistor/peltier pair controlling this segment</param>
         /// <param name="kP">Proportionality constant of the error term (start low 0.0001) - "correct" value will depend on setup</param>
         /// <param name="kI">Proportionality constant of the integrated error term (start at 0 increase as necessary)</param>
         /// <param name="velocity">Determines the maximum attempted degree change per second</param>
-        public TemperatureController(Thermistor thermistor, Peltier peltier, double kP, double kI, double kD, double velocity, string controllerName) {
-            TheThermistor = thermistor;
+        public TemperatureController(Thermistor thermistor1, Thermistor thermistor2, Peltier peltier, double kP, double kI, double kD, double velocity, string controllerName) {
+            Thermistor1 = thermistor1;
+            Thermistor2 = thermistor2;
             ThePeltier = peltier;
-            TheThermistor.PropertyChanged += ThermistorPropertyChanged;
+            // While we act based on the average temperature of both thermistors, we are only triggered by the first
+            Thermistor1.PropertyChanged += ThermistorPropertyChanged;
             _kP = kP;
             _kI = kI;
             _kD = kD;
@@ -257,7 +261,7 @@ namespace MHApi.DrewsClasses.Temperature{
         public void Start() {
             IntegralOfError = 0;
             setPoint = TargetTemperature;
-            CurTemp = TheThermistor.Temperature;
+            CurTemp = (Thermistor1.Temperature + Thermistor2.Temperature) / 2.0;
             lock (lockObject)
                 IsRunning = true;
         }
@@ -307,8 +311,8 @@ namespace MHApi.DrewsClasses.Temperature{
                         setPoint = TargetTemperature;
                 }
 
-                //Sets temperature
-                CurTemp = TheThermistor.Temperature;
+                //Sets temperature based on the average of both connected thermistors
+                CurTemp = (Thermistor1.Temperature + Thermistor2.Temperature) / 2.0;
 
                 //Detect temperature fault condition
                 if (CurTemp > MaximumTemperature || CurTemp < MinimumTemperature)
@@ -358,22 +362,6 @@ namespace MHApi.DrewsClasses.Temperature{
                         return;
                     }
                 }
-
-				//slightly increase effective kp for cooling - above 30C below 30C we decrease
-				//the contribution of the Integral error term but ONLY if the integral of the error
-				//is also <0
-				//if (error > 0)
-				//    dutyCycle = KP * error + KI * IntegralOfError + KD * Derivative;
-				//else
-				//{
-				//    if(CurTemp>30)
-				//        dutyCycle = KP * error * 1.4 + KI * IntegralOfError;
-				//    else if(IntegralOfError>0)
-				//        dutyCycle = KP * error * 0.8 + KI * IntegralOfError;
-				//    else
-				//        dutyCycle = KP * error * 0.8 + KI * IntegralOfError*0.5;
-				//    //dutyCycle = KP * error * 1.4 + KI * IntegralOfError;
-				//}
 				
 				dutyCycle = KP * error + KI * IntegralOfError + KD * Derivative;
                 if (dutyCycle >= 0 && dutyCycle < MaxDutyCycle) {
@@ -401,7 +389,7 @@ namespace MHApi.DrewsClasses.Temperature{
                 IsRunning = false;
             ThePeltier.PeltierMode = PeltierModes.Cool; // Set output to low
             ThePeltier.DutyCycle = 0;
-            TheThermistor.PropertyChanged -= ThermistorPropertyChanged;
+            Thermistor1.PropertyChanged -= ThermistorPropertyChanged;
         }
 
         #region INotifyPropertyChanged
